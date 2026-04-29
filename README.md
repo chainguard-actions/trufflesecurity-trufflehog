@@ -1,6 +1,12 @@
 # trufflesecurity/trufflehog
 
-Hardened GitHub Action by [Chainguard](https://www.chainguard.dev).
+Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/trufflesecurity/trufflehog](https://github.com/trufflesecurity/trufflehog).
+
+## Versions
+
+| Version | Tag | Upstream commit |
+|---------|-----|-----------------|
+| v3.93.8 | [`v3.93.8`](https://github.com/chainguard-actions/trufflehog/tree/v3.93.8) | — |
 
 ## Privacy
 
