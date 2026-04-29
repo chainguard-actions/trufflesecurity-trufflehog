@@ -1,5 +1,6 @@
 {
   "owner": "trufflesecurity",
   "name": "trufflehog",
-  "visibility": ""
+  "visibility": "internal",
+  "description": "Find, verify, and analyze leaked credentials"
 }

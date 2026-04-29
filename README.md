@@ -1,5 +1,7 @@
 # trufflesecurity/trufflehog
 
+Find, verify, and analyze leaked credentials
+
 Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/trufflesecurity/trufflehog](https://github.com/trufflesecurity/trufflehog).
 
 ## Versions
