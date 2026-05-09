@@ -1,4 +1,6 @@
 {
-  "upstream": "trufflesecurity/trufflehog",
-  "version": "v3.93.8"
+  "owner": "trufflesecurity",
+  "repo": "trufflehog",
+  "version": "",
+  "url": "https://github.com/trufflesecurity/trufflehog"
 }
