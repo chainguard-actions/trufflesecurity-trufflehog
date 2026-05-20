@@ -1,7 +1,0 @@
-{
-  "owner": "trufflesecurity",
-  "name": "trufflehog",
-  "visibility": "internal",
-  "description": "Find, verify, and analyze leaked credentials",
-  "block_publish": false
-}
