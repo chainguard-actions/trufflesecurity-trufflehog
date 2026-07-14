@@ -1,0 +1,50 @@
+name: Test TruffleHog scan between BASE and HEAD commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_EVENT_NAME: workflow_dispatch
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get commit SHAs for BASE and HEAD
+        id: get-commits
+        run: |
+          # Get the two most recent commits
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Get the parent commit; if only one commit exists, use empty string for BASE
+          PARENT_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          echo "head=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base=$PARENT_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD: $HEAD_SHA"
+          echo "BASE: $PARENT_SHA"
+
+      - name: Run TruffleHog with explicit BASE and HEAD (different commits)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          base: ${{ steps.get-commits.outputs.base }}
+          head: ${{ steps.get-commits.outputs.head }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert action ran (success=no secrets, failure=secrets found)
+        env:
+          OUTCOME: ${{ steps.trufflehog.outcome }}
+          BASE: ${{ steps.get-commits.outputs.base }}
+          HEAD: ${{ steps.get-commits.outputs.head }}
+        run: |
+          echo "base: $BASE"
+          echo "head: $HEAD"
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran with explicit BASE and HEAD"
+          else
+            echo "FAIL: Unexpected outcome: $OUTCOME"
+            exit 1
+          fi

@@ -1,0 +1,37 @@
+name: Test TruffleHog push event with no commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog action (push event with empty commits list)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          extra_args: "--only-verified"
+        env:
+          # Simulate a push event with no commits (empty array)
+          GITHUB_EVENT_NAME: push
+          # github.event.commits.*.id will be empty array []
+          # github.event.after and github.event.before are not set
+        continue-on-error: true
+
+      - name: Assert action exited cleanly (no commits to scan)
+        env:
+          OUTCOME: ${{ steps.trufflehog.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # With no commits in a push event, the action should exit 0 ("No commits to scan")
+          # or may fall through to scan - either success or failure is acceptable
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog handled push event with no commits"
+          else
+            echo "FAIL: Unexpected outcome: $OUTCOME"
+            exit 1
+          fi

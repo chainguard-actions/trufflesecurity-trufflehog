@@ -1,0 +1,40 @@
+name: Test TruffleHog BASE equals HEAD error
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_EVENT_NAME: workflow_dispatch
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get current HEAD commit SHA
+        id: get-sha
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Current HEAD: $SHA"
+
+      - name: Run TruffleHog with BASE == HEAD (should fail with error)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          base: ${{ steps.get-sha.outputs.sha }}
+          head: ${{ steps.get-sha.outputs.sha }}
+        continue-on-error: true
+
+      - name: Assert action failed because BASE == HEAD
+        env:
+          OUTCOME: ${{ steps.trufflehog.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog correctly failed when BASE == HEAD"
+          else
+            echo "FAIL: Expected failure when BASE == HEAD, but got: $OUTCOME"
+            exit 1
+          fi

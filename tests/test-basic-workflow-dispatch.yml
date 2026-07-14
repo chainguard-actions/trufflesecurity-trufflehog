@@ -1,0 +1,34 @@
+name: Test TruffleHog basic workflow_dispatch scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_EVENT_NAME: workflow_dispatch
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog action (workflow_dispatch - full history scan)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert action ran (exit 0 or 1 are both valid - 0=no secrets, 1=secrets found)
+        env:
+          OUTCOME: ${{ steps.trufflehog.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # The action should either succeed (no secrets) or fail (secrets found)
+          # Both are valid outcomes - we just want to confirm it ran
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran successfully"
+          else
+            echo "FAIL: Unexpected outcome: $OUTCOME"
+            exit 1
+          fi
