@@ -1,0 +1,33 @@
+name: Test TruffleHog - extra_args input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get commits for scanning
+        id: commits
+        run: |
+          HEAD=$(git rev-parse HEAD)
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            BASE=$(git rev-parse HEAD~1)
+          else
+            BASE=""
+          fi
+          echo "head=$HEAD" >> $GITHUB_OUTPUT
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+      - name: Run TruffleHog with extra_args (only-verified)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert scan completed successfully with extra_args
+        run: |
+          echo "TruffleHog scan with --only-verified completed successfully"
+          echo "PASS"

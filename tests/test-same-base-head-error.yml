@@ -1,0 +1,34 @@
+name: Test TruffleHog - same base and head error
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get current HEAD SHA for base and head
+        id: get-sha
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Using SHA: $SHA"
+      - name: Run TruffleHog with same base and head (expect failure)
+        id: trufflehog
+        uses: .
+        with:
+          path: ./
+          base: ${{ steps.get-sha.outputs.sha }}
+          head: ${{ steps.get-sha.outputs.sha }}
+        continue-on-error: true
+      - name: Assert action failed with same base/head error
+        env:
+          OUTCOME: ${{ steps.trufflehog.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected action to fail when base and head are the same commit"
+            exit 1
+          fi
+          echo "PASS: action correctly failed when base == head"
