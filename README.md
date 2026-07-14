@@ -9,6 +9,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
 | v3.93.8 | [`v3.93.8`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.93.8) | — |
+| v3.95.9 | [`v3.95.9`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.95.9) | [`27b0417`](https://github.com/trufflesecurity/trufflehog/commit/27b0417c16317ca9a472a9a8092acce143b49c55) |
 
 ## Privacy
 
