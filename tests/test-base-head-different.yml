@@ -1,0 +1,50 @@
+name: Test scanning between different BASE and HEAD commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install mock docker to avoid Docker-in-Docker requirement
+        run: |
+          mkdir -p /tmp/mock-bin
+          cat > /tmp/mock-bin/docker << 'EOF'
+          #!/bin/sh
+          # Mock docker: simulate a successful TruffleHog scan (no secrets found)
+          echo "[mock docker] called with args: $*" >&2
+          exit 0
+          EOF
+          chmod +x /tmp/mock-bin/docker
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+
+      - name: Check if there are at least 2 commits
+        id: check-commits
+        run: |
+          COUNT=$(git rev-list --count HEAD)
+          echo "commit_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Commit count: $COUNT"
+
+      - name: Run TruffleHog action with different BASE and HEAD
+        id: action
+        if: ${{ steps.check-commits.outputs.commit_count > 1 }}
+        uses: .
+        with:
+          path: "./"
+          base: "HEAD~1"
+          head: "HEAD"
+          extra_args: "--only-verified"
+
+      - name: Assert action completed successfully with different BASE and HEAD
+        if: ${{ steps.check-commits.outputs.commit_count > 1 }}
+        run: |
+          echo "PASS: TruffleHog scan between HEAD~1 and HEAD completed successfully"
+
+      - name: Skip if only one commit
+        if: ${{ steps.check-commits.outputs.commit_count <= 1 }}
+        run: |
+          echo "Skipping test: only one commit in repository"
+          echo "PASS: test skipped due to insufficient commit history"

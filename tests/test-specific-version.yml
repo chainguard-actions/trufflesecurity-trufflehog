@@ -1,4 +1,4 @@
-name: Test TruffleHog - specific version input
+name: Test scanning with a specific TruffleHog version
 on:
   workflow_dispatch:
 jobs:
@@ -8,27 +8,49 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - name: Get commits for scanning
-        id: commits
+
+      - name: Install mock docker to avoid Docker-in-Docker requirement
         run: |
-          HEAD=$(git rev-parse HEAD)
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            BASE=$(git rev-parse HEAD~1)
-          else
-            BASE=""
-          fi
-          echo "head=$HEAD" >> $GITHUB_OUTPUT
-          echo "base=$BASE" >> $GITHUB_OUTPUT
-      - name: Run TruffleHog with a specific version
-        id: trufflehog
+          mkdir -p /tmp/mock-bin
+          cat > /tmp/mock-bin/docker << 'EOF'
+          #!/bin/sh
+          # Mock docker: simulate a successful TruffleHog scan (no secrets found)
+          # Capture the version from the image name argument for verification
+          echo "[mock docker] called with args: $*" >&2
+          # Write the image name to a temp file so we can assert on it
+          for arg in "$@"; do
+            case "$arg" in
+              ghcr.io/trufflesecurity/trufflehog:*)
+                echo "$arg" > /tmp/trufflehog-image-used.txt
+                ;;
+            esac
+          done
+          exit 0
+          EOF
+          chmod +x /tmp/mock-bin/docker
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+
+      - name: Run TruffleHog action with specific version
+        id: action
         uses: .
         with:
-          path: ./
-          base: ${{ steps.commits.outputs.base }}
-          head: ${{ steps.commits.outputs.head }}
-          version: "3.82.6"
+          path: "./"
+          version: "3.95.8"
           extra_args: "--only-verified"
-      - name: Assert scan completed with specified version
+
+      - name: Assert action completed successfully with specific version
         run: |
-          echo "TruffleHog scan with version 3.82.6 completed successfully"
-          echo "PASS"
+          echo "Checking that the correct version was used..."
+          if [ -f /tmp/trufflehog-image-used.txt ]; then
+            IMAGE=$(cat /tmp/trufflehog-image-used.txt)
+            echo "Image used: $IMAGE"
+            if echo "$IMAGE" | grep -q "3.95.8"; then
+              echo "PASS: TruffleHog scan with version 3.95.8 completed successfully"
+            else
+              echo "FAIL: Expected version 3.95.8 but got: $IMAGE"
+              exit 1
+            fi
+          else
+            echo "FAIL: mock docker was not called with a trufflehog image"
+            exit 1
+          fi

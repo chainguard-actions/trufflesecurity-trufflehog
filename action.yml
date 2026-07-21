@@ -52,11 +52,11 @@ runs:
         ARGS: ${{ inputs.extra_args }}
         COMMIT_IDS: ${{ toJson(github.event.commits.*.id) }}
         VERSION: ${{ inputs.version }}
-        GH_EVENT_NAME: ${{ github.event_name }}
-        GH_EVENT_AFTER: ${{ github.event.after }}
-        GH_EVENT_BEFORE: ${{ github.event.before }}
-        GH_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GH_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_AFTER: ${{ github.event.after }}
+        EVENT_BEFORE: ${{ github.event.before }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         ##########################################
         ## ADVANCED USAGE                       ##
@@ -90,39 +90,37 @@ runs:
         ## Scan commits based on event type     ##
         ##########################################
         else
-          if [ "$GH_EVENT_NAME" == "push" ]; then
+          if [ "$EVENT_NAME" == "push" ]; then
             COMMIT_LENGTH=$(printenv COMMIT_IDS | jq length)
             if [ $COMMIT_LENGTH == "0" ]; then
               echo "No commits to scan"
               exit 0
             fi
-            HEAD="$GH_EVENT_AFTER"
-            if [ "$GH_EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
+            HEAD=$EVENT_AFTER
+            if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
               BASE=""
             else
-              BASE="$GH_EVENT_BEFORE"
+              BASE=$EVENT_BEFORE
             fi
-          elif [ "$GH_EVENT_NAME" == "workflow_dispatch" ] || [ "$GH_EVENT_NAME" == "schedule" ]; then
+          elif [ "$EVENT_NAME" == "workflow_dispatch" ] || [ "$EVENT_NAME" == "schedule" ]; then
             BASE=""
             HEAD=""
-          elif [ "$GH_EVENT_NAME" == "pull_request" ]; then
-            BASE="$GH_PR_BASE_SHA"
-            HEAD="$GH_PR_HEAD_SHA"
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            BASE=$PR_BASE_SHA
+            HEAD=$PR_HEAD_SHA
           fi
         fi
         ##########################################
         ##          Run TruffleHog              ##
         ##########################################
-        docker_args=()
-        [ -n "$BASE" ] && docker_args+=(--since-commit "$BASE")
-        [ -n "$HEAD" ] && docker_args+=(--branch "$HEAD")
-        extra_args=()
-        [ -n "$ARGS" ] && IFS=' ' read -ra extra_args <<< "$ARGS"
         docker run --rm -v .:/tmp -w /tmp \
         "ghcr.io/trufflesecurity/trufflehog:${VERSION}" \
         git file:///tmp/ \
-        "${docker_args[@]}" \
+        --since-commit \
+        ${BASE:+"$BASE"} \
+        --branch \
+        ${HEAD:+"$HEAD"} \
         --fail \
         --no-update \
         --github-actions \
-        "${extra_args[@]}"
+        ${ARGS:+"$ARGS"}

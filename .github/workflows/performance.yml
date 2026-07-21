@@ -2,8 +2,7 @@ name: Performance Test
 
 on: [pull_request]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   speed:
