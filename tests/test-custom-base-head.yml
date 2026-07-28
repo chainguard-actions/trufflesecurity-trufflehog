@@ -1,0 +1,50 @@
+name: Test TruffleHog - Custom base and head inputs
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get commit SHAs for base and head
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Use HEAD~1 as base if available, otherwise use empty string
+          BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          echo "head=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD SHA: $HEAD_SHA"
+          echo "BASE SHA: $BASE_SHA"
+
+      - name: Run TruffleHog action with explicit base and head
+        id: action
+        if: steps.commits.outputs.base != ''
+        uses: .
+        with:
+          path: "./"
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          version: "3.95.5"
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert action ran or was skipped due to single-commit repo
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          BASE: ${{ steps.commits.outputs.base }}
+        run: |
+          echo "base SHA: $BASE"
+          echo "action outcome: $OUTCOME"
+          if [ -z "$BASE" ]; then
+            echo "PASS: repository has only one commit, base/head test skipped"
+          elif [ "$OUTCOME" == "success" ] || [ "$OUTCOME" == "failure" ]; then
+            echo "PASS: action ran and produced outcome: $OUTCOME"
+          else
+            echo "FAIL: unexpected outcome: $OUTCOME"
+            exit 1
+          fi

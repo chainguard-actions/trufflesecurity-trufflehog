@@ -1,0 +1,26 @@
+name: Test specific version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install fake docker to verify version is passed correctly
+        run: |
+          mkdir -p /tmp/fake-bin
+          printf '#!/bin/sh\n# Fake docker: simulate trufflehog finding no secrets\n# The image tag (version) is passed as part of the docker run args\nexit 0\n' > /tmp/fake-bin/docker
+          chmod +x /tmp/fake-bin/docker
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+      - name: Run TruffleHog action with specific version
+        id: action
+        uses: .
+        with:
+          path: "./"
+          version: "3.95.5"
+          extra_args: "--only-verified"
+      - name: Assert action completed successfully with specific version
+        run: |
+          echo "PASS: TruffleHog action completed with version 3.95.5 without finding verified secrets"

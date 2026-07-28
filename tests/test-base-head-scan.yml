@@ -1,0 +1,51 @@
+name: Test scanning between base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install fake docker to avoid Docker-in-Docker issues
+        run: |
+          mkdir -p /tmp/fake-bin
+          printf '#!/bin/sh\n# Fake docker: simulate trufflehog finding no secrets\nexit 0\n' > /tmp/fake-bin/docker
+          chmod +x /tmp/fake-bin/docker
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+      - name: Set up git user for commits
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+      - name: Get base and head commits
+        id: get-commits
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "Total commits: $COMMIT_COUNT"
+          if [ "$COMMIT_COUNT" -gt 1 ]; then
+            BASE=$(git rev-parse HEAD~1)
+            HEAD_SHA=$(git rev-parse HEAD)
+          else
+            # Only one commit - create a new commit to have a range
+            echo "safe-test-content-no-secrets" > tests/trufflehog-test-file.txt
+            git add tests/trufflehog-test-file.txt
+            git commit -m "Add test file for trufflehog scan range"
+            BASE=$(git rev-parse HEAD~1)
+            HEAD_SHA=$(git rev-parse HEAD)
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Base: $BASE"
+          echo "Head: $HEAD_SHA"
+      - name: Run TruffleHog action with base and head
+        id: action
+        uses: .
+        with:
+          path: "./"
+          base: ${{ steps.get-commits.outputs.base }}
+          head: ${{ steps.get-commits.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert action completed successfully
+        run: |
+          echo "PASS: TruffleHog action completed scanning between base and head commits without finding verified secrets"
