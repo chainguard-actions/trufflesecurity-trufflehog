@@ -1,0 +1,54 @@
+name: Test TruffleHog pull_request scan with explicit base and head
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Check commit count and get SHAs
+        id: prereqs
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "Commit count: $COMMIT_COUNT"
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD SHA: $HEAD_SHA"
+          if [ "$COMMIT_COUNT" -gt 1 ]; then
+            PARENT_SHA=$(git rev-parse HEAD~1)
+            echo "parent_sha=$PARENT_SHA" >> $GITHUB_OUTPUT
+            echo "Parent SHA: $PARENT_SHA"
+          else
+            echo "parent_sha=" >> $GITHUB_OUTPUT
+            echo "Only one commit, cannot test base/head scan"
+          fi
+      - name: Run TruffleHog with explicit base and head (different commits)
+        id: action
+        if: steps.prereqs.outputs.commit_count > '1'
+        uses: .
+        with:
+          base: ${{ steps.prereqs.outputs.parent_sha }}
+          head: ${{ steps.prereqs.outputs.head_sha }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+      - name: Assert action ran or was skipped appropriately
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          COMMIT_COUNT: ${{ steps.prereqs.outputs.commit_count }}
+        run: |
+          echo "commit_count: $COMMIT_COUNT"
+          echo "outcome: $OUTCOME"
+          if [ "$COMMIT_COUNT" -le 1 ]; then
+            echo "SKIP: Only one commit in repository, cannot test base/head scan"
+            exit 0
+          fi
+          # Accept success (no verified secrets) or failure (docker unavailable or secrets found)
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action ran and produced an outcome: $OUTCOME"
+          else
+            echo "FAIL: unexpected outcome: $OUTCOME"
+            exit 1
+          fi

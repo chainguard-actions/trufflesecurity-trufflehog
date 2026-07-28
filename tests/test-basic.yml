@@ -1,0 +1,35 @@
+name: Test basic usage (workflow_dispatch full scan)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install mock docker
+        run: |
+          mkdir -p /tmp/mock-bin
+          printf '%s\n' '#!/bin/sh' \
+            'echo "mock docker called with: $*"' \
+            'case "$*" in' \
+            '  *trufflehog*)' \
+            '    echo "Mock TruffleHog: scan complete, no secrets found."' \
+            '    exit 0' \
+            '    ;;' \
+            '  *)' \
+            '    echo "Mock docker: unknown command, exiting 0"' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' > /tmp/mock-bin/docker
+          chmod +x /tmp/mock-bin/docker
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+      - name: Run TruffleHog action (workflow_dispatch - full scan)
+        id: action
+        uses: .
+        with:
+          version: "latest"
+      - name: Assert action completed successfully
+        run: |
+          echo "PASS: TruffleHog action completed without finding verified secrets"

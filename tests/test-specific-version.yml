@@ -1,0 +1,49 @@
+name: Test specific version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install mock docker and capture args
+        run: |
+          mkdir -p /tmp/mock-bin
+          printf '%s\n' '#!/bin/sh' \
+            'echo "mock docker called with: $*"' \
+            'case "$*" in' \
+            '  *trufflehog*)' \
+            '    echo "$*" > /tmp/docker-version-captured.txt' \
+            '    echo "Mock TruffleHog: scan complete, no secrets found."' \
+            '    exit 0' \
+            '    ;;' \
+            '  *)' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' > /tmp/mock-bin/docker
+          chmod +x /tmp/mock-bin/docker
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+      - name: Run TruffleHog action with a specific version
+        id: action
+        uses: .
+        with:
+          version: "3.88.0"
+          extra_args: "--only-verified"
+      - name: Assert action used the correct version
+        run: |
+          echo "Checking captured docker args for version..."
+          if [ -f /tmp/docker-version-captured.txt ]; then
+            CAPTURED=$(cat /tmp/docker-version-captured.txt)
+            echo "Captured args: $CAPTURED"
+            if echo "$CAPTURED" | grep -q "trufflehog:3.88.0"; then
+              echo "PASS: correct version 3.88.0 was used in docker run"
+            else
+              echo "FAIL: version 3.88.0 not found in docker args"
+              exit 1
+            fi
+          else
+            echo "FAIL: docker was not called (args file not found)"
+            exit 1
+          fi
