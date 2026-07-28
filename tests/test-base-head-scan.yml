@@ -1,0 +1,52 @@
+name: Test scan with explicit base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install mock docker
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho "MOCK DOCKER CALLED: $*" >&2\nexit 0\n' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Get commit SHAs for base and head
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          PARENT_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "parent_sha=$PARENT_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD: $HEAD_SHA"
+          echo "PARENT: $PARENT_SHA"
+
+      - name: Run TruffleHog action with explicit base and head
+        id: action
+        uses: .
+        with:
+          base: ${{ steps.commits.outputs.parent_sha }}
+          head: ${{ steps.commits.outputs.head_sha }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert scan completed successfully
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          PARENT_SHA: ${{ steps.commits.outputs.parent_sha }}
+          HEAD_SHA: ${{ steps.commits.outputs.head_sha }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "parent_sha: $PARENT_SHA"
+          echo "head_sha: $HEAD_SHA"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scan completed successfully"
+          else
+            echo "FAIL: TruffleHog scan failed unexpectedly"
+            exit 1
+          fi

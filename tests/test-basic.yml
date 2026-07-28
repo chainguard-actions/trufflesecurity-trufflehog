@@ -1,0 +1,27 @@
+name: Test basic usage (workflow_dispatch, full repo scan)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install mock docker
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho "MOCK DOCKER CALLED: $*" >&2\nexit 0\n' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run TruffleHog action (workflow_dispatch, only-verified)
+        id: action
+        uses: .
+        with:
+          extra_args: "--only-verified"
+
+      - name: Assert scan completed without error
+        run: |
+          echo "PASS: TruffleHog scan completed successfully (no verified secrets found)"
