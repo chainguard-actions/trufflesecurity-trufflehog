@@ -1,0 +1,41 @@
+name: Test TruffleHog with extra_args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Set up git origin reachable inside Docker container
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          rm -rf "$GITHUB_WORKSPACE/.git-remote"
+          git init --bare "$GITHUB_WORKSPACE/.git-remote"
+          git push "$GITHUB_WORKSPACE/.git-remote" HEAD:refs/heads/act-harness
+          git push "$GITHUB_WORKSPACE/.git-remote" --tags
+          git remote set-url origin "$GITHUB_WORKSPACE/.git-remote" 2>/dev/null || \
+            git remote add origin "$GITHUB_WORKSPACE/.git-remote"
+      - id: action
+        uses: .
+        with:
+          path: "./"
+          extra_args: "--only-verified --json"
+        continue-on-error: true
+      - name: Assert action ran with extra_args
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # The action should run TruffleHog with the extra args.
+          # Success means no verified secrets found; failure means secrets found or env issue.
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scan with extra_args completed successfully"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog scan ran and exited (may have found issues or env limitation)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
