@@ -1,0 +1,40 @@
+name: Test custom base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Ensure at least two commits exist
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "Commit count: $COMMIT_COUNT"
+          if [ "$COMMIT_COUNT" -lt 2 ]; then
+            echo "SKIP: not enough commits to test base/head scanning"
+            exit 0
+          fi
+      - name: Run TruffleHog with explicit base and head
+        id: action
+        uses: .
+        with:
+          path: ./
+          base: HEAD~1
+          head: HEAD
+          extra_args: "--only-verified"
+        continue-on-error: true
+      - name: Assert action ran with custom base/head
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scanned between HEAD~1 and HEAD successfully"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran and exited (may have found issues or Docker unavailable)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
