@@ -1,0 +1,48 @@
+name: Test error when base and head are the same commit
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install mock docker to avoid pulling real image
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '%s\n' '#!/bin/sh' \
+            '# Fake docker: simulate TruffleHog finding no secrets (exit 0)' \
+            'echo "TruffleHog OSS (mock)"' \
+            'echo "No secrets detected."' \
+            'exit 0' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Get current HEAD SHA
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "SHA: $HEAD_SHA"
+
+      - name: Run TruffleHog action with same base and head (should fail)
+        id: action
+        uses: .
+        continue-on-error: true
+        with:
+          base: ${{ steps.commits.outputs.sha }}
+          head: ${{ steps.commits.outputs.sha }}
+
+      - name: Assert action failed with expected error
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action correctly failed when base and head are the same commit"
+          else
+            echo "FAIL: expected action to fail when base == head, but got outcome: $OUTCOME"
+            exit 1
+          fi

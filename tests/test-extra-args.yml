@@ -1,0 +1,47 @@
+name: Test extra_args and version inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install mock docker to capture args and simulate success
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '%s\n' '#!/bin/sh' \
+            '# Fake docker: log all args and simulate TruffleHog finding no secrets (exit 0)' \
+            'echo "docker called with args: $*" >> /tmp/docker-calls.log' \
+            'echo "TruffleHog OSS (mock)"' \
+            'echo "No secrets detected."' \
+            'exit 0' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run TruffleHog action with extra_args and specific version
+        id: action
+        uses: .
+        with:
+          extra_args: "--only-verified --json"
+          version: "latest"
+
+      - name: Assert action completed successfully with extra args
+        run: |
+          echo "PASS: TruffleHog scan completed with extra_args and version inputs"
+          if [ -f /tmp/docker-calls.log ]; then
+            echo "Docker was called with:"
+            cat /tmp/docker-calls.log
+            # Verify extra_args were passed through
+            if grep -q -- "--only-verified" /tmp/docker-calls.log && grep -q -- "--json" /tmp/docker-calls.log; then
+              echo "PASS: extra_args were correctly passed to docker"
+            else
+              echo "FAIL: extra_args were not passed to docker"
+              exit 1
+            fi
+          else
+            echo "FAIL: docker was never called"
+            exit 1
+          fi
