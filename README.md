@@ -17,6 +17,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v3.96.0 | [`v3.96.0`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.96.0) | [`6f3c981`](https://github.com/trufflesecurity/trufflehog/commit/6f3c981e7b77f235fd2702dd74af25fc4b72bf11) |
 | v3.97.0 | [`v3.97.0`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.97.0) | [`bcfcf73`](https://github.com/trufflesecurity/trufflehog/commit/bcfcf73aaf4759d4dadc2783177c245a02792318) |
 | v3.97.1 | [`v3.97.1`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.97.1) | [`20652fb`](https://github.com/trufflesecurity/trufflehog/commit/20652fbbdefffcdaa493a5bf57ab2ac6b1db715b) |
+| v3.97.2 | [`v3.97.2`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.97.2) | [`cc1fe98`](https://github.com/trufflesecurity/trufflehog/commit/cc1fe982afc515d2991365ce8d4d0dd07170fcad) |
 
 ## Privacy
 
