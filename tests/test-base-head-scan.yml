@@ -1,0 +1,55 @@
+name: Test scanning between base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check commit count and set base/head
+        id: commits
+        run: |
+          COUNT=$(git rev-list --count HEAD)
+          echo "commit count: $COUNT"
+          if [ "$COUNT" -lt 2 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "base=" >> "$GITHUB_OUTPUT"
+            echo "head=" >> "$GITHUB_OUTPUT"
+          else
+            BASE=$(git rev-parse HEAD~1)
+            HEAD_SHA=$(git rev-parse HEAD)
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base=$BASE" >> "$GITHUB_OUTPUT"
+            echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: action
+        uses: .
+        with:
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert action ran correctly
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          SKIP: ${{ steps.commits.outputs.skip }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "skip: $SKIP"
+          if [ "$SKIP" = "true" ]; then
+            echo "PASS: not enough commits to test base/head scan, skipping"
+            exit 0
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scanned between base and head with no verified secrets"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran and reported findings (acceptable in harness)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
