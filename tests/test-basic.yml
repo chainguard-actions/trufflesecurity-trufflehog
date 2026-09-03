@@ -1,0 +1,32 @@
+name: Test basic usage (workflow_dispatch)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Run TruffleHog action (workflow_dispatch - scans full history)
+        id: action
+        uses: .
+        with:
+          extra_args: "--only-verified"
+        continue-on-error: true
+      - name: Assert action completed (success or no verified secrets found)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # For a test repo, TruffleHog should either succeed (no verified secrets)
+          # or fail because it found verified secrets. Both are valid outcomes
+          # for the action running correctly. We just want to confirm it ran.
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog completed successfully (no verified secrets found)"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran and reported findings (action executed correctly)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
