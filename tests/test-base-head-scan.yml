@@ -1,0 +1,68 @@
+name: Test BASE and HEAD scan (different commits)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up git origin reachable inside Docker container
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          rm -rf "$GITHUB_WORKSPACE/.git-remote"
+          git init --bare "$GITHUB_WORKSPACE/.git-remote"
+          git push "$GITHUB_WORKSPACE/.git-remote" HEAD:refs/heads/act-harness
+          git push "$GITHUB_WORKSPACE/.git-remote" --tags
+          git remote set-url origin "$GITHUB_WORKSPACE/.git-remote" 2>/dev/null || \
+            git remote add origin "$GITHUB_WORKSPACE/.git-remote"
+
+      - name: Resolve BASE and HEAD commits
+        id: commits
+        run: |
+          # Use HEAD~1 as base and HEAD as head (two different commits)
+          # If there's only one commit, use empty string for base
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "commit_count: $COMMIT_COUNT"
+          if [ "$COMMIT_COUNT" -ge 2 ]; then
+            BASE_SHA=$(git rev-parse HEAD~1)
+            HEAD_SHA=$(git rev-parse HEAD)
+            echo "base=$BASE_SHA" >> "$GITHUB_OUTPUT"
+            echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            echo "can_scan=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_scan=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: scan
+        uses: .
+        continue-on-error: true
+        if: steps.commits.outputs.can_scan == 'true'
+        with:
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+
+      - name: Assert BASE/HEAD scan result
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+          CAN_SCAN: ${{ steps.commits.outputs.can_scan }}
+        run: |
+          echo "can_scan: $CAN_SCAN"
+          echo "outcome: $OUTCOME"
+          if [ "$CAN_SCAN" != "true" ]; then
+            echo "SKIP: not enough commits to test BASE/HEAD scan"
+            exit 0
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog BASE/HEAD scan completed with no verified secrets found"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: TruffleHog BASE/HEAD scan failed unexpectedly"
+            exit 1
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
