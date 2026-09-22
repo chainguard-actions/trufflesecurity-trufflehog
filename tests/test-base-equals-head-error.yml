@@ -1,0 +1,36 @@
+name: Test error when BASE equals HEAD
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get current commit SHA
+        id: get-sha
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Current SHA: $SHA"
+      - id: scan
+        uses: .
+        continue-on-error: true
+        with:
+          base: ${{ steps.get-sha.outputs.sha }}
+          head: ${{ steps.get-sha.outputs.sha }}
+      - name: Assert action failed with BASE==HEAD error
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action correctly failed when BASE and HEAD are the same commit"
+          elif [ "$OUTCOME" = "success" ]; then
+            echo "FAIL: action should have failed when BASE == HEAD"
+            exit 1
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

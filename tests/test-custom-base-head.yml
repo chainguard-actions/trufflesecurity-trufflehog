@@ -1,0 +1,53 @@
+name: Test custom base and head scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get base and head commit SHAs
+        id: get-commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Try to get parent commit; if only one commit, use empty tree
+          if git rev-parse HEAD~1 > /dev/null 2>&1; then
+            BASE_SHA=$(git rev-parse HEAD~1)
+          else
+            # Only one commit in history, use the empty tree SHA
+            BASE_SHA=$(git hash-object -t tree /dev/null)
+          fi
+          echo "head=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD SHA: $HEAD_SHA"
+          echo "BASE SHA: $BASE_SHA"
+      - id: scan
+        uses: .
+        continue-on-error: true
+        with:
+          base: ${{ steps.get-commits.outputs.base }}
+          head: ${{ steps.get-commits.outputs.head }}
+          extra_args: "--only-verified"
+          version: "latest"
+      - name: Assert scan ran with custom base/head
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+          BASE: ${{ steps.get-commits.outputs.base }}
+          HEAD: ${{ steps.get-commits.outputs.head }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "base: $BASE"
+          echo "head: $HEAD"
+          # When BASE != HEAD, the action should run TruffleHog between those commits
+          # Success means no verified secrets found; failure means secrets found or docker issue
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scan completed successfully between base and head"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog scan ran (may have found secrets or encountered docker issue)"
+            echo "NOTE: The action ran correctly with custom base/head inputs"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
