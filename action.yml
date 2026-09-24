@@ -1,0 +1,136 @@
+name: 'TruffleHog OSS'
+description: 'Find and verify leaked credentials in your source code.'
+author: Truffle Security Co. <support@trufflesec.com>
+inputs:
+  path:
+    description: Repository path
+    required: false
+    default: "./"
+  base:
+    description: Start scanning from here (usually main branch).
+    required: false
+    default: ""
+  head:
+    description: Scan commits until here (usually dev branch).
+    required: false
+  extra_args:
+    default: ""
+    description: Extra args to be passed to the trufflehog cli.
+    required: false
+  version:
+    default: "latest"
+    description: Scan with this trufflehog cli version.
+    required: false
+  image:
+    default: "ghcr.io/trufflesecurity/trufflehog"
+    description: Docker image to use. Override to point at a registry mirror.
+    required: false
+branding:
+  icon: "shield"
+  color: "green"
+runs:
+  using: "composite"
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+        ARGS: ${{ inputs.extra_args }}
+        COMMIT_IDS: ${{ toJson(github.event.commits.*.id) }}
+        VERSION: ${{ inputs.version }}
+        IMAGE: ${{ inputs.image }}
+        GH_EVENT_NAME: ${{ github.event_name }}
+        GH_EVENT_AFTER: ${{ github.event.after }}
+        GH_EVENT_BEFORE: ${{ github.event.before }}
+        GH_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GH_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        ##########################################
+        ## ADVANCED USAGE                       ##
+        ## Scan by BASE & HEAD user inputs      ##
+        ## If BASE == HEAD, exit with error     ##
+        ##########################################
+        # Check if jq is installed, if not, install it
+        if ! command -v jq &> /dev/null
+        then
+          echo "jq could not be found, installing..."
+          apt-get -y update && apt-get install -y jq
+        fi
+
+        git status >/dev/null  # make sure we are in a git repository
+        if [ -n "$BASE" ] || [ -n "$HEAD" ]; then
+          if [ -n "$BASE" ]; then
+            base_commit=$(git rev-parse "$BASE" 2>/dev/null) || true
+          else
+            base_commit=""
+          fi
+          if [ -n "$HEAD" ]; then
+            head_commit=$(git rev-parse "$HEAD" 2>/dev/null) || true
+          else
+            head_commit=""
+          fi
+          if [ "$base_commit" == "$head_commit" ] ; then
+            echo "::error::BASE and HEAD commits are the same. TruffleHog won't scan anything. Please see documentation (https://github.com/trufflesecurity/trufflehog#octocat-trufflehog-github-action)."
+            exit 1
+          fi
+        ##########################################
+        ## Scan commits based on event type     ##
+        ##########################################
+        else
+          if [ "$GH_EVENT_NAME" == "push" ]; then
+            COMMIT_LENGTH=$(printenv COMMIT_IDS | jq length)
+            if [ $COMMIT_LENGTH == "0" ]; then
+              echo "No commits to scan"
+              exit 0
+            fi
+            HEAD="$GH_EVENT_AFTER"
+            if [ "$GH_EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
+              BASE=""
+            else
+              BASE="$GH_EVENT_BEFORE"
+            fi
+          elif [ "$GH_EVENT_NAME" == "workflow_dispatch" ] || [ "$GH_EVENT_NAME" == "schedule" ]; then
+            BASE=""
+            HEAD=""
+          elif [ "$GH_EVENT_NAME" == "pull_request" ]; then
+            BASE="$GH_PR_BASE_SHA"
+            HEAD="$GH_PR_HEAD_SHA"
+          fi
+        fi
+        ##########################################
+        ##          Run TruffleHog              ##
+        ##########################################
+        extra_args=()
+        if [ -n "$ARGS" ]; then
+          while IFS= read -r -d '' t; do extra_args+=("$t"); done \
+            < <(printf '%s' "$ARGS" | xargs printf '%s\0')
+        fi
+        docker run --rm -v .:/tmp -w /tmp \
+        "${IMAGE}:${VERSION}" \
+        git file:///tmp/ \
+        --since-commit \
+        "${BASE:-}" \
+        --branch \
+        "${HEAD:-}" \
+        --fail \
+        --no-update \
+        --github-actions \
+        "${extra_args[@]}"
