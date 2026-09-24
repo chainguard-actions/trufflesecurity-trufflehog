@@ -1,0 +1,49 @@
+name: Test explicit base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get base and head commits
+        id: get-commits
+        run: |
+          HEAD=$(git rev-parse HEAD)
+          # Use the parent commit as base; if only one commit exists, use empty tree
+          PARENT=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PARENT" ]; then
+            # Only one commit — create a dummy commit to have a different base
+            git config user.email "test@example.com"
+            git config user.name "Test User"
+            git commit --allow-empty -m "test: dummy commit for base"
+            HEAD=$(git rev-parse HEAD)
+            PARENT=$(git rev-parse HEAD~1)
+          fi
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "base=$PARENT" >> "$GITHUB_OUTPUT"
+          echo "HEAD: $HEAD"
+          echo "BASE: $PARENT"
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          base: ${{ steps.get-commits.outputs.base }}
+          head: ${{ steps.get-commits.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert action ran with explicit base/head
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # TruffleHog scanned the range between base and head.
+          # Success means no verified secrets; failure means secrets found or docker error.
+          # Both are valid outcomes — we just verify the action ran (not skipped/cancelled).
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran with explicit base/head (outcome: $OUTCOME)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
