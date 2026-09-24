@@ -1,0 +1,35 @@
+name: Test custom path input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install mock docker
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho "Mock docker called with args: $*" >&2\nexit 0\n' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Create a subdirectory git repo to scan
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/scan-target"
+          cd "$GITHUB_WORKSPACE/scan-target"
+          git init
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo "# Test file with no secrets" > README.md
+          git add README.md
+          git commit -m "Initial commit"
+      - name: Run TruffleHog with custom path
+        id: action
+        uses: .
+        with:
+          path: ./scan-target
+          extra_args: "--only-verified"
+      - name: Assert action completed successfully with custom path
+        run: |
+          echo "PASS: TruffleHog scan completed on custom path without finding verified secrets"

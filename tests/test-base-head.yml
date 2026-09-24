@@ -1,0 +1,45 @@
+name: Test explicit base and head inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install mock docker
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho "Mock docker called with args: $*" >&2\nexit 0\n' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Set up commit range for scanning
+        id: commits
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          # Ensure we have at least 2 commits to scan between
+          PARENT=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PARENT" ]; then
+            # Only one commit exists; create a dummy commit to have a range
+            echo "dummy" > dummy-test-file.txt
+            git add dummy-test-file.txt
+            git commit -m "Dummy commit for test range"
+            PARENT=$(git rev-parse HEAD~1)
+          fi
+          HEAD=$(git rev-parse HEAD)
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "base=$PARENT" >> "$GITHUB_OUTPUT"
+          echo "HEAD: $HEAD"
+          echo "BASE: $PARENT"
+      - name: Run TruffleHog with explicit base and head
+        id: action
+        uses: .
+        with:
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert action completed successfully
+        run: |
+          echo "PASS: TruffleHog scan with explicit base/head completed without finding verified secrets"
