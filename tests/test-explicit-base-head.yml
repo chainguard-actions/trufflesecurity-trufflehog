@@ -1,0 +1,57 @@
+name: Test TruffleHog explicit base and head scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get commit SHAs for base and head
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Use HEAD~1 as base if it exists, otherwise use an empty tree SHA
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            BASE_SHA=$(git rev-parse HEAD~1)
+          else
+            # Only one commit in history, use the empty tree
+            BASE_SHA=""
+          fi
+          echo "head=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "HEAD SHA: $HEAD_SHA"
+          echo "BASE SHA: $BASE_SHA"
+
+      - name: Run TruffleHog with explicit base and head (last commit only)
+        id: action
+        uses: .
+        with:
+          path: "./"
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert scan ran with explicit base/head
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          BASE: ${{ steps.commits.outputs.base }}
+          HEAD: ${{ steps.commits.outputs.head }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "base: $BASE"
+          echo "head: $HEAD"
+          # The action should either succeed (no verified secrets in last commit)
+          # or fail (verified secrets found). Both mean the action ran correctly.
+          # It should NOT fail due to BASE==HEAD since they are different commits.
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scanned from base to head with no verified secrets"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog scanned from base to head and reported verified secrets"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

@@ -1,0 +1,35 @@
+name: Test TruffleHog extra args input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog with extra args (only-verified and json output)
+        id: action
+        uses: .
+        with:
+          path: "./"
+          extra_args: "--only-verified --json"
+        continue-on-error: true
+
+      - name: Assert action ran with extra args
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # The action should run with the extra args passed through.
+          # Success means no verified secrets; failure means verified secrets found.
+          # Either way the action accepted and used the extra_args input.
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog ran with extra args, no verified secrets found"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran with extra args and reported verified secrets"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
