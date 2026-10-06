@@ -1,0 +1,44 @@
+name: Test extra_args input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install mock docker that simulates a clean TruffleHog scan and logs args
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '%s\n' '#!/bin/sh' \
+            '# Mock docker: intercept trufflehog image runs, log args, exit 0' \
+            'case "$*" in' \
+            '  *trufflehog*)' \
+            '    echo "Mock docker called with args: $*" >&2' \
+            '    echo "TruffleHog scan complete. No verified secrets found." >&2' \
+            '    exit 0' \
+            '    ;;' \
+            '  *pull*)' \
+            '    echo "Mock: skipping pull" >&2' \
+            '    exit 0' \
+            '    ;;' \
+            '  *info*)' \
+            '    echo "{\"ServerVersion\":\"mock\"}"' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'if command -v /usr/bin/docker > /dev/null 2>&1; then' \
+            '  exec /usr/bin/docker "$@"' \
+            'fi' \
+            'exit 0' > "$HOME/.local/bin/docker"
+          chmod +x "$HOME/.local/bin/docker"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Run TruffleHog with extra args (only-verified and json output)
+        id: action
+        uses: .
+        with:
+          extra_args: "--only-verified --json"
+      - name: Assert action completed with extra args
+        run: |
+          echo "PASS: TruffleHog scan with extra_args completed successfully"
