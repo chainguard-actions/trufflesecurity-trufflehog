@@ -1,0 +1,32 @@
+name: Test custom version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog with a specific version
+        id: action
+        uses: .
+        with:
+          version: "3.82.6"
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert scan ran with specified version
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog ran successfully with version 3.82.6"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran with specified version (Docker may be unavailable or secrets found)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

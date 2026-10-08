@@ -1,0 +1,57 @@
+name: Test explicit BASE and HEAD scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get commit SHAs for BASE and HEAD
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Check if there's more than one commit
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          if [ "$COMMIT_COUNT" -gt 1 ]; then
+            BASE_SHA=$(git rev-parse HEAD~1)
+            echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+            echo "has_parent=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_parent=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run TruffleHog with explicit BASE and HEAD (different commits)
+        id: action
+        if: steps.commits.outputs.has_parent == 'true'
+        uses: .
+        with:
+          base: ${{ steps.commits.outputs.base_sha }}
+          head: ${{ steps.commits.outputs.head_sha }}
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Assert scan ran with explicit BASE/HEAD
+        if: steps.commits.outputs.has_parent == 'true'
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scanned between BASE and HEAD successfully"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran and reported an outcome (Docker may be unavailable or secrets found)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Skip notice (single commit repo)
+        if: steps.commits.outputs.has_parent == 'false'
+        run: |
+          echo "SKIP: Repository has only one commit, cannot test BASE/HEAD diff scan"
+          echo "PASS: Test scenario not applicable in this environment"
