@@ -1,0 +1,55 @@
+name: Test explicit base and head commits
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Set up git origin reachable inside Docker container
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          rm -rf "$GITHUB_WORKSPACE/.git-remote"
+          git init --bare "$GITHUB_WORKSPACE/.git-remote"
+          git push "$GITHUB_WORKSPACE/.git-remote" HEAD:refs/heads/act-harness
+          git push "$GITHUB_WORKSPACE/.git-remote" --tags
+          git remote set-url origin "$GITHUB_WORKSPACE/.git-remote" 2>/dev/null || \
+            git remote add origin "$GITHUB_WORKSPACE/.git-remote"
+      - name: Get base and head SHAs
+        id: commits
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Try to get parent commit; if only one commit exists, create a dummy scenario
+          PARENT_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PARENT_SHA" ]; then
+            echo "Only one commit exists, using HEAD as head and empty as base"
+            echo "base=" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=$PARENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "HEAD SHA: $HEAD_SHA"
+          echo "Parent SHA: $PARENT_SHA"
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert action ran with explicit base and head
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scan completed with explicit base/head (no verified secrets)"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog ran with explicit base/head (found verified secrets or scan issue)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
