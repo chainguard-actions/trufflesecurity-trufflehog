@@ -1,6 +1,7 @@
 name: 'TruffleHog OSS'
 description: 'Find and verify leaked credentials in your source code.'
 author: Truffle Security Co. <support@trufflesec.com>
+
 inputs:
   path:
     description: Repository path
@@ -28,6 +29,7 @@ inputs:
 branding:
   icon: "shield"
   color: "green"
+
 runs:
   using: "composite"
   steps:
@@ -57,11 +59,11 @@ runs:
         COMMIT_IDS: ${{ toJson(github.event.commits.*.id) }}
         VERSION: ${{ inputs.version }}
         IMAGE: ${{ inputs.image }}
-        EVENT_NAME: ${{ github.event_name }}
-        EVENT_AFTER: ${{ github.event.after }}
-        EVENT_BEFORE: ${{ github.event.before }}
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_EVENT_NAME: ${{ github.event_name }}
+        GH_EVENT_AFTER: ${{ github.event.after }}
+        GH_EVENT_BEFORE: ${{ github.event.before }}
+        GH_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GH_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         ##########################################
         ## ADVANCED USAGE                       ##
@@ -95,35 +97,42 @@ runs:
         ## Scan commits based on event type     ##
         ##########################################
         else
-          if [ "$EVENT_NAME" == "push" ]; then
+          if [ "$GH_EVENT_NAME" == "push" ]; then
             COMMIT_LENGTH=$(printenv COMMIT_IDS | jq length)
-            if [ $COMMIT_LENGTH == "0" ]; then
+            if [ "$COMMIT_LENGTH" == "0" ]; then
               echo "No commits to scan"
               exit 0
             fi
-            HEAD="$EVENT_AFTER"
-            if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
+            HEAD="$GH_EVENT_AFTER"
+            if [ "$GH_EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
               BASE=""
             else
-              BASE="$EVENT_BEFORE"
+              BASE="$GH_EVENT_BEFORE"
             fi
-          elif [ "$EVENT_NAME" == "workflow_dispatch" ] || [ "$EVENT_NAME" == "schedule" ]; then
+          elif [ "$GH_EVENT_NAME" == "workflow_dispatch" ] || [ "$GH_EVENT_NAME" == "schedule" ]; then
             BASE=""
             HEAD=""
-          elif [ "$EVENT_NAME" == "pull_request" ]; then
-            BASE="$PR_BASE_SHA"
-            HEAD="$PR_HEAD_SHA"
+          elif [ "$GH_EVENT_NAME" == "pull_request" ]; then
+            BASE="$GH_PR_BASE_SHA"
+            HEAD="$GH_PR_HEAD_SHA"
           fi
         fi
         ##########################################
         ##          Run TruffleHog              ##
         ##########################################
-        docker_args=()
-        [ -n "$BASE" ] && docker_args+=(--since-commit "$BASE")
-        [ -n "$HEAD" ] && docker_args+=(--branch "$HEAD")
-        docker_args+=(--fail --no-update --github-actions)
-        [ -n "$ARGS" ] && docker_args+=("$ARGS")
+        extra_args=()
+        if [ -n "$ARGS" ]; then
+          while IFS= read -r -d '' t; do extra_args+=("$t"); done \
+            < <(printf '%s' "$ARGS" | xargs -r printf '%s\0')
+        fi
         docker run --rm -v .:/tmp -w /tmp \
         "${IMAGE}:${VERSION}" \
         git file:///tmp/ \
-        "${docker_args[@]}"
+        --since-commit \
+        "${BASE:-}" \
+        --branch \
+        "${HEAD:-}" \
+        --fail \
+        --no-update \
+        --github-actions \
+        "${extra_args[@]}"

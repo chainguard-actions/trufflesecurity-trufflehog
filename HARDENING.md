@@ -10,56 +10,38 @@
 
 **Harden Agent Version:** `2`
 
-Action **trufflesecurity--trufflehog/v3.96.0** was hardened automatically. 6 finding(s) were identified and resolved across 2 iteration(s).
+Action **trufflesecurity--trufflehog/v3.96.0** was hardened automatically. 2 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): Multiple GitHub Actions expressions are interpolated directly inside a run: shell command string in action.yml. The expressions ${{ github.event_name }}, ${{ github.event.after }}, ${{ github.event.before }}, ${{github.event.pull_request.base.sha}}, and ${{github.event.pull_request.head.sha}} are all expanded by the template engine before the shell sees them, allowing an attacker to inject arbitrary shell commands via crafted event payloads. For example: `if [ "${{ github.event_name }}" == "push" ]; then` and `HEAD=${{ github.event.after }}`.
+Sub-rule (a): Multiple ${{ github.* }} expressions are directly interpolated inside the run: shell script in action.yml, allowing an attacker to inject arbitrary shell commands. Offending lines include:
+- `if [ "${{ github.event_name }}" == "push" ]` — github.event_name interpolated directly into shell
+- `HEAD=${{ github.event.after }}` — github.event.after interpolated directly, unquoted
+- `if [ ${{ github.event.before }} == "0000000000000000000000000000000000000000" ]` — github.event.before interpolated directly, unquoted
+- `elif [ "${{ github.event_name }}" == "workflow_dispatch" ]` — repeated github.event_name interpolation
+- `elif [ "${{ github.event_name }}" == "pull_request" ]` — repeated github.event_name interpolation
+- `BASE=${{github.event.pull_request.base.sha}}` — pull_request.base.sha interpolated directly, unquoted
+- `HEAD=${{github.event.pull_request.head.sha}}` — pull_request.head.sha interpolated directly, unquoted
+
+Sub-rule (b): Unquoted shell variable expansions of workflow-controllable data:
+- `${BASE:-''}`, `${HEAD:-''}`, `${ARGS:-''}` passed unquoted to `docker run` — shell metacharacters in these values (sourced from inputs.*) would be parsed by the shell
+- `[ $COMMIT_LENGTH == "0" ]` — $COMMIT_LENGTH is unquoted in the test expression
 
 Locations:
 
-- `action.yml:78`
+- `action.yml:76`
+- `action.yml:80`
+- `action.yml:81`
+- `action.yml:83`
 - `action.yml:84`
-- `action.yml:85`
+- `action.yml:87`
 - `action.yml:88`
-- `action.yml:90`
-- `action.yml:93`
-- `action.yml:94`
-- `action.yml:95`
-
-### script-injection (severity: high)
-
-Sub-rule (a): The expression ${{ steps.auth.outputs.credentials_file_path }} (a steps.*.outputs.* context value) is interpolated directly inside a run: shell command string in release-bot.yml. This value flows through YAML template substitution before the shell quotes it, allowing injection if the output value contains shell metacharacters. Offending line: `-v ${{ steps.auth.outputs.credentials_file_path }}:/tmp/keys/GCP_SA_TRUFFLE_RELEASE_BOT.json:ro \`
-
-Locations:
-
-- `.github/workflows/release-bot.yml:34`
-
-### missing-permissions (severity: medium)
-
-The workflow file performance.yml has no top-level permissions: key and none of its jobs define a job-level permissions: block. Without explicit permissions, the workflow inherits the repository default (which may be read/write for all scopes), violating the principle of least privilege.
-
-Locations:
-
-- `.github/workflows/performance.yml:1`
-
-### missing-permissions (severity: medium)
-
-The workflow file smoke.yml has no top-level permissions: key and none of its jobs define a job-level permissions: block. Without explicit permissions, the workflow inherits the repository default (which may be read/write for all scopes), violating the principle of least privilege.
-
-Locations:
-
-- `.github/workflows/smoke.yml:1`
-
-### missing-permissions (severity: medium)
-
-The workflow file secrets.yml has no top-level permissions: key and its single job has no job-level permissions: block. Without explicit permissions, the workflow inherits the repository default (which may be read/write for all scopes), violating the principle of least privilege.
-
-Locations:
-
-- `.github/workflows/secrets.yml:1`
+- `action.yml:89`
+- `action.yml:97`
+- `action.yml:99`
+- `action.yml:101`
 
 ### static-inline-injection (severity: high)
 
@@ -73,16 +55,11 @@ Locations:
 
 ### Iteration 1
 
-**Fixes applied:** script-injection, missing-permissions, static-inline-injection
+**Fixes applied:** script-injection, static-inline-injection
 
 **Notes:**
 
-Fixed all 6 findings across 5 files:
-1. action.yml (script-injection + static-inline-injection): Moved github.event_name, github.event.after, github.event.before, github.event.pull_request.base.sha, and github.event.pull_request.head.sha from inline ${{ }} expressions in the run: block into the step's env: map as EVENT_NAME, EVENT_AFTER, EVENT_BEFORE, PR_BASE_SHA, and PR_HEAD_SHA. Updated all shell references to use the environment variables with proper quoting.
-2. .github/workflows/release-bot.yml (script-injection): Moved steps.auth.outputs.credentials_file_path from the inline docker -v flag into the step's env: map as CREDENTIALS_FILE_PATH, then referenced it as "$CREDENTIALS_FILE_PATH" in the shell command.
-3. .github/workflows/performance.yml (missing-permissions): Added top-level `permissions: contents: read` block.
-4. .github/workflows/smoke.yml (missing-permissions): Added top-level `permissions: contents: read` block.
-5. .github/workflows/secrets.yml (missing-permissions): Added top-level `permissions: contents: read` block.
+Fixed all script injection findings in action.yml by moving github.* expressions out of the run: shell script and into the step's env: block: github.event_name → GH_EVENT_NAME, github.event.after → GH_EVENT_AFTER, github.event.before → GH_EVENT_BEFORE, github.event.pull_request.base.sha → GH_PR_BASE_SHA, github.event.pull_request.head.sha → GH_PR_HEAD_SHA. All shell references were updated to use the safe $VAR_NAME form with proper double-quoting. Also fixed unquoted variable expansions: $COMMIT_LENGTH in test expression now quoted as "$COMMIT_LENGTH"; ${BASE:-''} and ${HEAD:-''} now quoted as "${BASE:-}" and "${HEAD:-}". The ARGS variable (extra_args input, a list of CLI flags) remains unquoted for proper word-splitting as it is an argument list.
 
 ### Iteration 2
 
@@ -90,5 +67,5 @@ Fixed all 6 findings across 5 files:
 
 **Notes:**
 
-Replaced the three unquoted variable expansions (${BASE:-''}, ${HEAD:-''}, ${ARGS:-''}) in the docker run command with a bash array approach. A docker_args array is built conditionally: --since-commit "$BASE" is added only when BASE is non-empty, --branch "$HEAD" only when HEAD is non-empty, fixed flags are always added, and "$ARGS" is added only when non-empty. The array is then expanded as "${docker_args[@]}" in the docker run command. This ensures all user-controlled values are properly double-quoted (preventing shell metacharacter injection) while also correctly omitting optional flags and their values when the inputs are empty.
+Replaced the unquoted `${ARGS:-}` expansion in the `docker run` command with a proper xargs-based array tokenization. The `extra_args` input is an argument list, so the fix initializes a bash array, guards against empty input, uses `printf '%s' "$ARGS" | xargs -r printf '%s\0'` for quote-aware tokenization into NUL-delimited tokens, reads them into the array, and expands as `"${extra_args[@]}"` in the docker run invocation. This prevents shell injection while correctly handling multiple arguments including quoted ones.
 
