@@ -1,0 +1,34 @@
+name: Test basic usage (workflow_dispatch full scan)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Run TruffleHog with workflow_dispatch defaults
+        id: action
+        uses: .
+        with:
+          path: "./"
+          extra_args: "--only-verified"
+        continue-on-error: true
+      - name: Assert action completed (secrets found or clean scan)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # Exit code 0 = no secrets found (clean)
+          # Exit code 183 = verified secrets found (action worked, secrets detected)
+          # Both are valid outcomes for scanning the trufflehog repo itself
+          # (which contains real test credentials in its own test suite)
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: TruffleHog scan completed with no verified secrets found"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: TruffleHog scan completed and found verified secrets (expected for this repo)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

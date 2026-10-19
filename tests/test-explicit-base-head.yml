@@ -1,0 +1,35 @@
+name: Test explicit BASE and HEAD scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Get commit SHAs for base and head
+        id: get-shas
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          # Use HEAD~1 as base if available, otherwise use empty tree SHA
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            BASE_SHA=$(git rev-parse HEAD~1)
+          else
+            # Only one commit in history; use git empty tree as base
+            BASE_SHA=$(git hash-object -t tree /dev/null)
+          fi
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "HEAD SHA: $HEAD_SHA"
+          echo "BASE SHA: $BASE_SHA"
+      - name: Run TruffleHog scanning last commit range
+        id: action
+        uses: .
+        with:
+          base: ${{ steps.get-shas.outputs.base }}
+          head: ${{ steps.get-shas.outputs.head }}
+          extra_args: "--only-verified"
+      - name: Assert scan completed successfully
+        run: |
+          echo "PASS: TruffleHog scan with explicit BASE and HEAD completed without finding verified secrets"
