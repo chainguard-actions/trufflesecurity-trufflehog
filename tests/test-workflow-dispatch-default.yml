@@ -1,0 +1,54 @@
+name: Test default workflow_dispatch scan
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake docker that records its arguments
+        run: |
+          mkdir -p /tmp/fakebin
+          cat > /tmp/fakebin/docker <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$@" > /tmp/docker-args
+          exit 0
+          EOF
+          chmod +x /tmp/fakebin/docker
+          rm -f /tmp/docker-args
+          echo "/tmp/fakebin" >> "$GITHUB_PATH"
+      - name: Create a scan repository
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/scan-repo"
+          mkdir -p "$GITHUB_WORKSPACE/scan-repo"
+          cd "$GITHUB_WORKSPACE/scan-repo"
+          git init -q .
+          echo one > a.txt
+          git add a.txt
+          git -c user.email=t@example.com -c user.name=T commit -q -m one
+      - id: action
+        uses: .
+        with:
+          path: scan-repo
+      - name: Assert docker invoked with defaults and no commit range
+        run: |
+          if [ ! -f /tmp/docker-args ]; then
+            echo "FAIL: docker was not invoked"
+            exit 1
+          fi
+          echo "--- docker args ---"
+          cat /tmp/docker-args
+          fail=0
+          for want in run --rm "ghcr.io/trufflesecurity/trufflehog:latest" git "file:///tmp/" \
+                      --since-commit --branch --fail --no-update --github-actions; do
+            if ! grep -qxF -- "$want" /tmp/docker-args; then
+              echo "FAIL: missing argument '$want'"
+              fail=1
+            fi
+          done
+          if grep -qE '^[0-9a-f]{40}$' /tmp/docker-args; then
+            echo "FAIL: no commit SHA expected for workflow_dispatch scan"
+            fail=1
+          fi
+          [ "$fail" = 0 ] || exit 1
+          echo "PASS"
