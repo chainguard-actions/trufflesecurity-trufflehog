@@ -1,0 +1,53 @@
+name: Test workflow_dispatch defaults
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake docker that records invocations
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/docker" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$@" > "$RUNNER_TEMP/docker-args.txt"
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/docker"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+      - name: Create scan repo
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/scan-repo"
+          cd "$GITHUB_WORKSPACE/scan-repo"
+          git init -q
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > a.txt
+          git add a.txt
+          git commit -q -m one
+      - id: action
+        uses: .
+        with:
+          path: scan-repo
+      - name: Assert docker arguments use defaults
+        run: |
+          f="$RUNNER_TEMP/docker-args.txt"
+          if [ ! -f "$f" ]; then
+            echo "FAIL: docker was not invoked"
+            exit 1
+          fi
+          echo "--- docker args ---"; cat "$f"
+          for expected in run --rm "ghcr.io/trufflesecurity/trufflehog:latest" git "file:///tmp/" \
+              --since-commit --branch --fail --no-update --github-actions; do
+            if ! grep -Fxq -- "$expected" "$f"; then
+              echo "FAIL: missing argument '$expected'"
+              exit 1
+            fi
+          done
+          if grep -Eq '^[0-9a-f]{40}$' "$f"; then
+            echo "FAIL: no commit sha expected for workflow_dispatch full scan"
+            exit 1
+          fi
+          echo "PASS"

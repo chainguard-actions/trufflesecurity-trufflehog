@@ -1,0 +1,79 @@
+name: Test base and head with custom image, version, extra args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake docker that records invocations
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/docker" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$@" > "$RUNNER_TEMP/docker-args.txt"
+          pwd > "$RUNNER_TEMP/docker-pwd.txt"
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/docker"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+      - id: setup
+        name: Create scan repo with two commits
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/scan-repo"
+          cd "$GITHUB_WORKSPACE/scan-repo"
+          git init -q
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > a.txt
+          git add a.txt
+          git commit -q -m one
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo two > b.txt
+          git add b.txt
+          git commit -q -m two
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          path: scan-repo
+          base: ${{ steps.setup.outputs.base }}
+          head: ${{ steps.setup.outputs.head }}
+          version: "3.88.0"
+          image: example.registry/trufflehog
+          extra_args: --results=verified
+      - name: Assert docker arguments
+        env:
+          BASE_SHA: ${{ steps.setup.outputs.base }}
+          HEAD_SHA: ${{ steps.setup.outputs.head }}
+        run: |
+          f="$RUNNER_TEMP/docker-args.txt"
+          if [ ! -f "$f" ]; then
+            echo "FAIL: docker was not invoked"
+            exit 1
+          fi
+          echo "--- docker args ---"; cat "$f"
+          echo "--- docker pwd ---"; cat "$RUNNER_TEMP/docker-pwd.txt"
+          for expected in run --rm "example.registry/trufflehog:3.88.0" git "file:///tmp/" \
+              --since-commit "$BASE_SHA" --branch "$HEAD_SHA" --fail --no-update \
+              --github-actions --results=verified; do
+            if ! grep -Fxq -- "$expected" "$f"; then
+              echo "FAIL: missing argument '$expected'"
+              exit 1
+            fi
+          done
+          # base must directly follow --since-commit, head must follow --branch
+          if [ "$(grep -Fx -A1 -- --since-commit "$f" | tail -n1)" != "$BASE_SHA" ]; then
+            echo "FAIL: --since-commit not followed by base sha"
+            exit 1
+          fi
+          if [ "$(grep -Fx -A1 -- --branch "$f" | tail -n1)" != "$HEAD_SHA" ]; then
+            echo "FAIL: --branch not followed by head sha"
+            exit 1
+          fi
+          case "$(cat "$RUNNER_TEMP/docker-pwd.txt")" in
+            */scan-repo) ;;
+            *) echo "FAIL: docker not run from scan-repo path"; exit 1 ;;
+          esac
+          echo "PASS"
