@@ -1,0 +1,2 @@
+This file intentionally contains no credentials.
+It is used by the clean-scan test.

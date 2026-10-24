@@ -1,0 +1,27 @@
+name: Test unresolvable BASE and HEAD refs pass through to trufflehog
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # On an unknown ref, "git rev-parse" prints the ref name itself to stdout.
+      # So base_commit and head_commit are different strings and the same-commit
+      # check does not trigger. trufflehog runs, reports that it cannot resolve the
+      # base ref, finds no secrets, and exits 0 (--fail only fails on findings).
+      - id: action
+        uses: .
+        with:
+          base: does-not-exist-base-ref
+          head: does-not-exist-head-ref
+      - name: Assert action ran trufflehog and succeeded
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected success (unresolvable refs give a non-fatal scan error)"
+            exit 1
+          fi
+          echo "PASS"

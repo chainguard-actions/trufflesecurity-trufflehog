@@ -1,0 +1,31 @@
+name: Test scan with results filtered to verified only
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # The workspace is the trufflehog repo itself, which has test secrets
+      # (earlier runs found unverified Gitlab results and exited 183). The
+      # --include-paths approach did not help. Here verification is turned off
+      # (--no-verification, so no network calls) and only verified results are
+      # reported (--results=verified). No result can be verified, so nothing
+      # is reported, --fail does not trigger, and the action should succeed.
+      # The full action path still runs: jq check, git status, the BASE/HEAD
+      # check (base=HEAD, head unset), and the trufflehog docker run.
+      - id: action
+        uses: .
+        with:
+          base: HEAD
+          extra_args: --no-verification --results=verified
+      - name: Assert scan succeeded
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected scan with verified-only results to succeed"
+            exit 1
+          fi
+          echo "PASS"
