@@ -1,0 +1,171 @@
+package couchbase
+
+import (
+	"context"
+	"fmt"
+	"time"
+	"unicode"
+
+	regexp "github.com/wasilibs/go-re2"
+
+	"github.com/couchbase/gocb/v2"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/common"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/detectors"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/pb/detector_typepb"
+)
+
+type Scanner struct {
+	detectors.DefaultMultiPartCredentialProvider
+}
+
+// Ensure the Scanner satisfies the interface at compile time.
+var _ detectors.Detector = (*Scanner)(nil)
+
+var (
+	// Make sure that your group is surrounded in boundary characters such as below to reduce false positives.
+	connectionStringPat = regexp.MustCompile(`\b(cb\.[a-z0-9]+\.cloud\.couchbase\.com)\b`)
+	usernamePat         = common.UsernameRegexCheck(`?()/\+=\s\n`)
+	passwordPat         = common.PasswordRegexCheck(`^<>;.*&|£\n\s`)
+)
+
+func (s Scanner) Type() detector_typepb.DetectorType {
+	return detector_typepb.DetectorType_Couchbase
+}
+
+func (s Scanner) Description() string {
+	return "Couchbase is a distributed NoSQL cloud database. Couchbase credentials can be used to access and modify data within the Couchbase database."
+}
+
+// Keywords are used for efficiently pre-filtering chunks.
+// Use identifiers in the secret preferably, or the provider name.
+func (s Scanner) Keywords() []string {
+	return []string{"couchbase://", "couchbases://"}
+}
+
+// FromData will find and optionally verify Couchbase secrets in a given set of bytes.
+func (s Scanner) FromData(ctx context.Context, verify bool, data []byte) (results []detectors.Result, err error) {
+	dataStr := string(data)
+
+	var uniqueConnStrings, uniqueUsernames, uniquePasswords = make(map[string]struct{}), make(map[string]struct{}), make(map[string]struct{})
+
+	for _, match := range connectionStringPat.FindAllStringSubmatch(dataStr, -1) {
+		uniqueConnStrings["couchbases://"+match[1]] = struct{}{}
+	}
+
+	for _, match := range usernamePat.Matches(data) {
+		uniqueUsernames[match] = struct{}{}
+	}
+
+	for _, match := range passwordPat.Matches(data) {
+		uniquePasswords[match] = struct{}{}
+	}
+
+	for connString := range uniqueConnStrings {
+		for username := range uniqueUsernames {
+			for password := range uniquePasswords {
+				if !isValidCouchbasePassword(password) {
+					continue
+				}
+
+				s1 := detectors.Result{
+					DetectorType: detector_typepb.DetectorType_Couchbase,
+					Raw:          fmt.Appendf([]byte(""), "%s:%s@%s", username, password, connString),
+					SecretParts: map[string]string{
+						"host":     connString,
+						"username": username,
+						"password": password,
+					},
+				}
+
+				if verify {
+					isVerified, verificationErr := verifyCouchBase(ctx, username, password, connString)
+					s1.Verified = isVerified
+					s1.SetVerificationError(verificationErr)
+					s1.SetPrimarySecretValue(connString)
+				}
+
+				results = append(results, s1)
+			}
+		}
+	}
+	return results, nil
+}
+
+// verifyCouchBase reports whether the credentials reach a healthy endpoint on the cluster.
+//
+// Every gocb.Cluster owns background goroutines and sockets until Close is called, so the
+// cluster is closed on every return path; otherwise each verification leaks a client for the
+// life of the process. The caller's ctx bounds the ping, which is where verification spends
+// nearly all of its time, so the engine's detector timeout actually stops verification.
+func verifyCouchBase(ctx context.Context, username, password, connString string) (bool, error) {
+	options := gocb.ClusterOptions{
+		Authenticator: gocb.PasswordAuthenticator{
+			Username: username,
+			Password: password,
+		},
+	}
+
+	// Sets a pre-configured profile called "wan-development" to help avoid latency issues
+	// when accessing Capella from a different Wide Area Network
+	// or Availability Zone (e.g. your laptop).
+	if err := options.ApplyProfile(gocb.ClusterConfigProfileWanDevelopment); err != nil {
+		return false, err
+	}
+
+	// gocb.Connect takes no context, so check ctx before building a client. FromData verifies
+	// candidates serially, and once ctx ends there is no point connecting for the rest.
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	cluster, err := gocb.Connect(connString, options)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = cluster.Close(nil) }()
+
+	// Ping the cluster's services. The ping ends at whichever comes first: its own timeout or
+	// the caller's ctx. Either way gocb reports the outcome per endpoint rather than as an
+	// error, so a ping cut short by ctx looks like a cluster with no healthy endpoint.
+	pings, err := cluster.Ping(&gocb.PingOptions{
+		Timeout: time.Second * 5,
+		Context: ctx,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	for _, ping := range pings.Services {
+		for _, pingEndpoint := range ping {
+			if pingEndpoint.State == gocb.PingStateOk {
+				return true, nil
+			}
+		}
+	}
+
+	// No healthy endpoint is only a determinate "unverified" if the ping ran to completion.
+	// When ctx ended first, report its error so the result is marked indeterminate instead.
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func isValidCouchbasePassword(password string) bool {
+	var hasLower, hasUpper, hasNumber, hasSpecialChar bool
+
+	for _, r := range password {
+		switch {
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsNumber(r):
+			hasNumber = true
+		case unicode.IsPunct(r), unicode.IsSymbol(r):
+			hasSpecialChar = true
+		}
+	}
+
+	return hasLower && hasUpper && hasNumber && hasSpecialChar
+}
