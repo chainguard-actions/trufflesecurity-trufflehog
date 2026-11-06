@@ -16,32 +16,20 @@ Action **trufflesecurity--trufflehog/v3.96.0** was hardened automatically. 2 fin
 
 ### script-injection (severity: high)
 
-Sub-rule (a): Multiple ${{ github.* }} expressions are directly interpolated inside the run: shell script in action.yml, allowing an attacker to inject arbitrary shell commands. Offending lines include:
-- `if [ "${{ github.event_name }}" == "push" ]` — github.event_name interpolated directly into shell
-- `HEAD=${{ github.event.after }}` — github.event.after interpolated directly, unquoted
-- `if [ ${{ github.event.before }} == "0000000000000000000000000000000000000000" ]` — github.event.before interpolated directly, unquoted
-- `elif [ "${{ github.event_name }}" == "workflow_dispatch" ]` — repeated github.event_name interpolation
-- `elif [ "${{ github.event_name }}" == "pull_request" ]` — repeated github.event_name interpolation
-- `BASE=${{github.event.pull_request.base.sha}}` — pull_request.base.sha interpolated directly, unquoted
-- `HEAD=${{github.event.pull_request.head.sha}}` — pull_request.head.sha interpolated directly, unquoted
-
-Sub-rule (b): Unquoted shell variable expansions of workflow-controllable data:
-- `${BASE:-''}`, `${HEAD:-''}`, `${ARGS:-''}` passed unquoted to `docker run` — shell metacharacters in these values (sourced from inputs.*) would be parsed by the shell
-- `[ $COMMIT_LENGTH == "0" ]` — $COMMIT_LENGTH is unquoted in the test expression
+action.yml composite run step (lines 45-111) breaks both sub-rules. (a) github.* expressions are placed directly in the run script: line 78 `if [ "${{ github.event_name }}" == "push" ]`, line 84 `HEAD=${{ github.event.after }}`, line 85 `if [ ${{ github.event.before }} == ...`, line 88 `BASE=${{ github.event.before }}`, lines 90/93 `${{ github.event_name }}` comparisons, line 94 `BASE=${{github.event.pull_request.base.sha}}`, line 95 `HEAD=${{github.event.pull_request.head.sha}}`. (b) Variables that hold the base/head/extra_args inputs are expanded unquoted in the docker run command: line 105 `${BASE:-''}`, line 107 `${HEAD:-''}`, line 111 `${ARGS:-''}`, which lets the shell split and expand them. Fix: move the github.* values into env: variables and quote them, and use the guarded form ${VAR:+"$VAR"} (or a bash array for ARGS if it must carry several flags).
 
 Locations:
 
-- `action.yml:76`
-- `action.yml:80`
-- `action.yml:81`
-- `action.yml:83`
+- `action.yml:78`
 - `action.yml:84`
-- `action.yml:87`
+- `action.yml:85`
 - `action.yml:88`
-- `action.yml:89`
-- `action.yml:97`
-- `action.yml:99`
-- `action.yml:101`
+- `action.yml:90`
+- `action.yml:94`
+- `action.yml:95`
+- `action.yml:105`
+- `action.yml:107`
+- `action.yml:111`
 
 ### static-inline-injection (severity: high)
 
@@ -59,7 +47,13 @@ Locations:
 
 **Notes:**
 
-Fixed all script injection findings in action.yml by moving github.* expressions out of the run: shell script and into the step's env: block: github.event_name → GH_EVENT_NAME, github.event.after → GH_EVENT_AFTER, github.event.before → GH_EVENT_BEFORE, github.event.pull_request.base.sha → GH_PR_BASE_SHA, github.event.pull_request.head.sha → GH_PR_HEAD_SHA. All shell references were updated to use the safe $VAR_NAME form with proper double-quoting. Also fixed unquoted variable expansions: $COMMIT_LENGTH in test expression now quoted as "$COMMIT_LENGTH"; ${BASE:-''} and ${HEAD:-''} now quoted as "${BASE:-}" and "${HEAD:-}". The ARGS variable (extra_args input, a list of CLI flags) remains unquoted for proper word-splitting as it is an argument list.
+I fixed both findings in action.yml. Nothing has been run or tested yet.
+
+- **Expressions moved out of the script:** the five `github.*` expressions (event_name, event.after, event.before, pull_request.base.sha and pull_request.head.sha) are now in the step's env: block as GH_EVENT_NAME, GH_EVENT_AFTER, GH_EVENT_BEFORE, GH_PR_BASE_SHA and GH_PR_HEAD_SHA. The script only uses them as quoted variables. I also quoted `$COMMIT_LENGTH`.
+- **BASE and HEAD:** I used `"${BASE:-}"` and `"${HEAD:-}"`, not the guarded `${VAR:+"$VAR"}` form the finding suggests. They follow `--since-commit` and `--branch`, so they always have to fill that slot. Upstream's `''` passed an empty argument when no value was set, and the quoted form does the same. With the guarded form, an empty BASE would make `--since-commit` take `--branch` as its value.
+- **extra_args:** upstream split it on whitespace as an unquoted variable. It is now read into an array with `read -r -d '' -a ... || true`, only when it isn't empty, and passed as `"${extra_args[@]}"`. Words still split the same way, but nothing is evaluated or glob-expanded.
+
+One behaviour change: when extra_args is empty, upstream passed one trailing empty argument to trufflehog and the new code passes none. That should be harmless, but I haven't checked it.
 
 ### Iteration 2
 
@@ -67,5 +61,5 @@ Fixed all script injection findings in action.yml by moving github.* expressions
 
 **Notes:**
 
-Replaced the unquoted `${ARGS:-}` expansion in the `docker run` command with a proper xargs-based array tokenization. The `extra_args` input is an argument list, so the fix initializes a bash array, guards against empty input, uses `printf '%s' "$ARGS" | xargs -r printf '%s\0'` for quote-aware tokenization into NUL-delimited tokens, reads them into the array, and expands as `"${extra_args[@]}"` in the docker run invocation. This prevents shell injection while correctly handling multiple arguments including quoted ones.
+Rewrote action.yml cleanly. The first attempt, using targeted edits, left the file still garbled. Changes: (1) Fixed the broken '::error::' line and put back upstream's 'exit 1 / fi / else' structure, so the event-based BASE/HEAD selection only runs when no base or head input is given. (2) Deleted the leftover docker run that expanded ${BASE:-''}, ${HEAD:-''} and ${ARGS:-''} unquoted. The one docker run left quotes "${BASE:-}" and "${HEAD:-}". It passes extra_args as an array built with 'read -r -d "" -a', which splits on whitespace the same way upstream's unquoted $ARGS did. One small difference from upstream: when extra_args is empty, no empty argument is passed (upstream passed ''). Every ${{ }} expression is now in env:.
 

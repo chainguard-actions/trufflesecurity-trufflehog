@@ -122,8 +122,7 @@ runs:
         ##########################################
         extra_args=()
         if [ -n "$ARGS" ]; then
-          while IFS= read -r -d '' t; do extra_args+=("$t"); done \
-            < <(printf '%s' "$ARGS" | xargs -r printf '%s\0')
+          read -r -d '' -a extra_args <<< "$ARGS" || true
         fi
         docker run --rm -v .:/tmp -w /tmp \
         "${IMAGE}:${VERSION}" \
