@@ -1,0 +1,31 @@
+name: Test scanning the latest commit range of the workspace repo
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      # The action passes the raw base/head strings to trufflehog, which
+      # resolves them inside its own clone of the mounted workspace. Use
+      # symbolic refs so nothing depends on files created at runtime (the
+      # trufflehog container mounts the host-side path, which does not see
+      # directories created inside the act job container).
+      - id: action
+        uses: .
+        with:
+          base: HEAD~1
+          head: HEAD
+          extra_args: --only-verified
+      - name: Assert scan succeeded
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected clean scan to succeed"
+            exit 1
+          fi
+          echo "PASS"

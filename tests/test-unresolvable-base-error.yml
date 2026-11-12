@@ -1,0 +1,28 @@
+name: Test unresolvable base ref is tolerated (no findings, scan does not fail)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # git rev-parse echoes an unknown ref name to stdout, so base_commit is
+      # non-empty and differs from the (empty) head; the BASE==HEAD guard does
+      # not trigger. trufflehog logs "unable to resolve ref" but finds no
+      # secrets, so the action completes successfully.
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          base: this-ref-does-not-exist-anywhere
+          extra_args: --only-verified
+      - name: Assert action completed without failing
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected unresolvable base to be tolerated (no findings => success), got '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS"
