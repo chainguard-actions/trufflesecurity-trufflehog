@@ -8,6 +8,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 | Version | Tag | Upstream commit | Hardening report |
 |---------|-----|-----------------|------------------|
+| v3.100.0 | [`v3.100.0`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.100.0) | [`d232362`](https://github.com/trufflesecurity/trufflehog/commit/d232362a64a09a9e7d58267b8f5acef00ae90e23) | [`HARDENING.md`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/blob/v3.100.0/HARDENING.md) |
 | v3.93.8 | [`v3.93.8`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.93.8) | — | [`HARDENING.md`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/blob/v3.93.8/HARDENING.md) |
 | v3.95.3 | [`v3.95.3`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.95.3) | [`37b7700`](https://github.com/trufflesecurity/trufflehog/commit/37b77001d0174ebec2fcca2bd83ff83a6d45a3ab) | [`HARDENING.md`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/blob/v3.95.3/HARDENING.md) |
 | v3.95.5 | [`v3.95.5`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/tree/v3.95.5) | [`d411fff`](https://github.com/trufflesecurity/trufflehog/commit/d411fff7b8879a62509f3fa98c07f247ac089a51) | [`HARDENING.md`](https://github.com/chainguard-actions/trufflesecurity-trufflehog/blob/v3.95.5/HARDENING.md) |
