@@ -1,0 +1,26 @@
+name: Test unresolvable base ref with no head
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # `git rev-parse <unknown-ref>` echoes the ref name on stdout, so
+      # base_commit is non-empty and differs from the empty head_commit. The
+      # BASE==HEAD guard does not trip; trufflehog runs, logs that the base ref
+      # cannot be resolved, finds nothing, and exits 0.
+      - id: action
+        uses: .
+        with:
+          base: this-ref-does-not-exist-xyz
+      - name: Assert action completed successfully
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected success (unresolvable base passes guard, scan finds nothing)"
+            exit 1
+          fi
+          echo "PASS"

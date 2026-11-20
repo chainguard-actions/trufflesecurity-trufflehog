@@ -1,0 +1,29 @@
+name: Test shallow-depth scan reporting only verified secrets (workflow_dispatch)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Runs the normal workflow_dispatch path (BASE/HEAD empty) through the
+      # real trufflehog docker image. The repository's full history contains
+      # test credentials that trufflehog reports as *verified* (a previous
+      # full-history run found 32 verified results and exited 183). Limit the
+      # scan to the most recent commit with --max-depth=1 and report only
+      # verified results, so the scan covers clean, recent content and --fail
+      # should leave the action exiting 0.
+      - id: action
+        uses: .
+        with:
+          extra_args: --max-depth=1 --results=verified
+      - name: Assert scan succeeded
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected depth-limited verified-only scan to succeed"
+            exit 1
+          fi
+          echo "PASS"
