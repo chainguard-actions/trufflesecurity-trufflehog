@@ -1,0 +1,59 @@
+name: Test scan with explicit base and head
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create a scratch git repo with two commits
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/scan-repo"
+          mkdir -p "$GITHUB_WORKSPACE/scan-repo"
+          cd "$GITHUB_WORKSPACE/scan-repo"
+          git init -q
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > a.txt && git add a.txt && git commit -q -m one
+          echo two > b.txt && git add b.txt && git commit -q -m two
+          echo "BASE_SHA=$(git rev-parse HEAD~1)" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Install fake docker that records its arguments
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/docker" <<EOF
+          #!/bin/bash
+          for a in "\$@"; do printf '%s\n' "\$a"; done > "$RUNNER_TEMP/docker-args"
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/docker"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+      - id: action
+        uses: .
+        with:
+          path: scan-repo
+          base: HEAD~1
+          head: HEAD
+      - name: Assert docker invoked with expected arguments
+        run: |
+          f="$RUNNER_TEMP/docker-args"
+          if [ ! -f "$f" ]; then
+            echo "FAIL: docker was not invoked"
+            exit 1
+          fi
+          cat "$f"
+          for expected in run ghcr.io/trufflesecurity/trufflehog:latest git file:///tmp/ --since-commit --branch --fail --no-update --github-actions; do
+            if ! grep -qxF -- "$expected" "$f"; then
+              echo "FAIL: missing argument '$expected'"
+              exit 1
+            fi
+          done
+          if [ "$(grep -A1 -x -- '--since-commit' "$f" | tail -n1)" != "HEAD~1" ]; then
+            echo "FAIL: --since-commit should be followed by HEAD~1"
+            exit 1
+          fi
+          if [ "$(grep -A1 -x -- '--branch' "$f" | tail -n1)" != "HEAD" ]; then
+            echo "FAIL: --branch should be followed by HEAD"
+            exit 1
+          fi
+          echo "PASS"

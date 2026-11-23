@@ -1,0 +1,53 @@
+name: Test workflow_dispatch scan with custom image, version and extra args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create a scratch git repo
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/scan-repo"
+          mkdir -p "$GITHUB_WORKSPACE/scan-repo"
+          cd "$GITHUB_WORKSPACE/scan-repo"
+          git init -q
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > a.txt && git add a.txt && git commit -q -m one
+      - name: Install fake docker that records its arguments
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/docker" <<EOF
+          #!/bin/bash
+          for a in "\$@"; do printf '%s\n' "\$a"; done > "$RUNNER_TEMP/docker-args"
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/docker"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+      - id: action
+        uses: .
+        with:
+          path: scan-repo
+          image: mirror.example.com/trufflehog
+          version: 3.100.1
+          extra_args: --results=verified
+      - name: Assert docker invoked with custom image and extra args
+        run: |
+          f="$RUNNER_TEMP/docker-args"
+          if [ ! -f "$f" ]; then
+            echo "FAIL: docker was not invoked"
+            exit 1
+          fi
+          cat "$f"
+          for expected in mirror.example.com/trufflehog:3.100.1 --results=verified git file:///tmp/ --since-commit --branch --fail --no-update --github-actions; do
+            if ! grep -qxF -- "$expected" "$f"; then
+              echo "FAIL: missing argument '$expected'"
+              exit 1
+            fi
+          done
+          if grep -qxF -- "ghcr.io/trufflesecurity/trufflehog:latest" "$f"; then
+            echo "FAIL: default image should not be used"
+            exit 1
+          fi
+          echo "PASS"
